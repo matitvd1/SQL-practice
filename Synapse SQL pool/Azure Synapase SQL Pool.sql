@@ -3,13 +3,13 @@
 CREATE DATABASE scoped credential PolyDemoCredential
 with
 identity = 'SecretIdentity',
-secret = '59UeFAPyJqHNXevcJOBP2Gj3MIyQP8nFjymyLsS5vVFqiQVOGEwOjilpw5ELt/XT0MYe7V6DpE6z+AStJ9rHfg==';
+secret = '...';
 
 CREATE EXTERNAL DATA SOURCE PolybaseDemoDataSource
 WITH
 (
     TYPE = HADOOP,
-    LOCATION = 'wasbs://polybasedemocontainer@courserademostorage.blob.core.windows.net/',
+    LOCATION = 'wasbs://polybasedemo@demostorage.blob.core.windows.net/',
     CREDENTIAL = PolyDemoCredential
 );
 
