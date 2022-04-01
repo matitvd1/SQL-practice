@@ -1,0 +1,177 @@
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema='public' AND table_type='BASE TABLE';
+   
+SELECT * FROM information_schema.columns 
+WHERE table_schema = 'public' AND table_name = 'PostInsights';
+
+/* Select specific columns from table and order by 'created_time' */
+SELECT created_time, engaged_fans, post_clicks, reach, impressions
+FROM "PostInsights"
+ORDER BY 1 DESC
+LIMIT 10;
+
+/* Extract the top 10 countries with their country code and number of fann */
+SELECT "CountryCode", "NumberOfFans"
+FROM "FansPerCountry"
+WHERE "Date" = (SELECT MAX("Date")
+				FROM "FansPerCountry")
+ORDER BY 2 DESC
+LIMIT 10;
+
+/* Group the data by the date to extract average number of new likes */
+SELECT DISTINCT "date", "new_likes"
+FROM "GlobalPage"
+ORDER BY 2 DESC;
+
+/* Group the data by date and determine the percetange of fans by gender */
+SELECT qr_1."date", qr_1."gender", qr_1."sum_per_gender", sum_by_date."sum_per_day",
+	   ROUND(qr_1."sum_per_gender"/sum_by_date."sum_per_day", 4) pct_gender
+FROM (SELECT fpga."date", fpga."gender", SUM(fpga."number_of_fans") sum_per_gender
+		FROM "FansPerGenderAge" as fpga
+		WHERE fpga."gender" in ('F','M')
+		GROUP BY fpga."date", fpga."gender"
+		ORDER BY 1 DESC) qr_1
+INNER JOIN (SELECT "date", SUM("number_of_fans") sum_per_day
+			FROM "FansPerGenderAge"
+			WHERE "gender" in ('F','M')
+			GROUP BY 1
+			ORDER BY 1 DESC) sum_by_date
+	  ON sum_by_date."date" = qr_1."date"
+
+/* Return 10 top countries which have the highest penetration ratio on the lastest date */ /*PopStats and FanPerCountry*/
+SELECT fpc."Date", ps."country_name", 
+		ROUND((cast(fpc."NumberOfFans" as numeric(18, 0))/cast(ps."population" as numeric(18, 0)) * 100),4) penetration_ratio
+FROM "FansPerCountry" fpc
+INNER JOIN "PopStats" ps
+	ON fpc."CountryCode" = ps."country_code"
+WHERE fpc."Date" = (SELECT MAX("Date")
+					FROM "FansPerCountry")
+ORDER BY pen_ratio DESC
+LIMIT 10;
+
+/* Find the bottom 10 cities that have a population more than 20,000,000 but have smallest number of fans */
+SELECT ps."country_name", qr_1."numb_fans", ROUND(qr_1."numb_fans"/CAST(ps."population" as numeric(18,0)),4) penetration_ratio
+FROM
+	(SELECT "CountryCode", CAST("NumberOfFans" as numeric(18,0)) numb_fans
+	 FROM "FansPerCountry"
+ 	 WHERE "Date" = (SELECT MAX("Date")
+				 	 FROM "FansPerCountry")
+ 	 ORDER BY "NumberOfFans" ASC) qr_1
+LEFT JOIN "PopStats" ps
+	ON ps."country_code" = qr_1."CountryCode"
+WHERE ps."population" > 20000000
+ORDER BY 2 ASC
+LIMIT 10;
+
+/* Find the 10 top cities (and their countries) that have the highest number of fans */
+SELECT DISTINCT ps."country_name", fp_city."city", SUM(fp_city."number_of_fans") sum_city
+FROM "FansPerCity" fp_city
+INNER JOIN "PopStats" ps
+	ON ps."country_code" = fp_city."country_code"
+GROUP BY 1, 2
+ORDER BY sum_city DESC
+LIMIT 10;
+
+/* Extract GDP of each country, grouped together for every year, along with the aggregate average GDP. */
+SELECT cs."country_id", cr."country", EXTRACT(YEAR FROM cs."date") c_year, cs."gdp",
+	   AVG(cs."gdp") OVER (PARTITION BY cs."country_id") 
+FROM "CountryRegions" cr
+LEFT JOIN "CountryStats" cs
+	ON cs."country_id" = cr."id"
+ORDER BY 2, 3 ASC;
+
+/* Partition the data by region showing the most successful athletes
+   in that region and sort them by the total number of gold medals won
+   by the athlete */
+SELECT cr."region", gs."athlete_id", SUM(gs."Gold") gold_count, 
+	   ROW_NUMBER() OVER (PARTITION BY cr."region" ORDER BY SUM(gs."Gold") DESC) rank_g
+FROM "GamesStats" gs
+INNER JOIN "CountryRegions" cr
+	ON cr."id" = gs."country_id"
+INNER JOIN "Athletes" athl
+	ON athl."id" = gs."athlete_id"
+GROUP BY 1, 2
+HAVING SUM(gs."Gold") != 0; 
+
+/* For each sport, return a count of how many athletes have a BMI under .25,
+   a BMI between .25 and .30, and a BMI above .30 */
+SELECT gs."sport",
+	   COUNT(DISTINCT CASE WHEN  athl."weight"/POWER(athl."height",2) * 100 < .25 THEN athl."id" END) under_25,
+	   COUNT(DISTINCT CASE WHEN  athl."weight"/POWER(athl."height",2) * 100 BETWEEN .25 AND .30 THEN athl."id" END) bet_25_30,
+	   COUNT(DISTINCT CASE WHEN  athl."weight"/POWER(athl."height",2) * 100 > .30 THEN athl."id" END) above_25
+FROM "Athletes" athl
+INNER JOIN "GamesStats" gs
+	ON gs."athlete_id" = athl."id"
+GROUP BY 1;
+
+SELECT gs."sport",
+	   CASE WHEN  athl."weight"/POWER(athl."height",2) * 100 < .25 THEN '< .25'
+	        WHEN  athl."weight"/POWER(athl."height",2) * 100 BETWEEN .25 AND .30 THEN '0.25-0.30'
+	        WHEN  athl."weight"/POWER(athl."height",2) * 100 > .30 THEN '> .30' END bmi_class,
+	   COUNT(DISTINCT athl."id") count_per_class			
+FROM "Athletes" athl
+INNER JOIN "GamesStats" gs
+	ON gs."athlete_id" = athl."id"
+GROUP BY 1,2
+ORDER BY 1, 3 DESC;
+
+/* Calculate the six moving average of the closing price of the stock */ 
+SELECT "date", "close",
+		AVG("close") OVER (ORDER BY "date" ROWS BETWEEN 5 PRECEDING AND CURRENT ROW) ma_6_d
+FROM "StockPrice"
+ORDER BY 1 asc;
+
+/* Calculate the engagement, grouped for every day of a week and 
+   sorted in the descending order */
+SELECT CASE WHEN "day_of_week" = 0 THEN 'Sunday'
+			WHEN "day_of_week" = 1 THEN 'Monday'
+			WHEN "day_of_week" = 2 THEN 'Tuesday'
+			WHEN "day_of_week" = 3 THEN 'Wednesday'
+			WHEN "day_of_week" = 4 THEN 'Thursday'
+			WHEN "day_of_week" = 5 THEN 'Friday'
+			WHEN "day_of_week" = 6 THEN 'Saturday' END day_of_week, 
+	ROUND("sum_ef"/"sum_r", 4)*100  eng_ratio
+FROM 
+(SELECT EXTRACT(DOW FROM "created_time") day_of_week, 
+	  SUM("engaged_fans") sum_ef, SUM("reach") sum_r
+FROM "PostInsights"
+GROUP BY 1) qr_1
+ORDER BY 2 DESC;
+
+SELECT CASE EXTRACT(DOW FROM "created_time")
+			WHEN 0 THEN 'Sunday'
+			WHEN 1 THEN 'Monday'
+			WHEN 2 THEN 'Tuesday'
+			WHEN 3 THEN 'Wednesday'
+			WHEN 4 THEN 'Thursday'
+			WHEN 5 THEN 'Friday'
+			WHEN 6 THEN 'Saturday' END day_of_week, 
+	ROUND(AVG(CAST("engaged_fans" AS numeric(18,0))/CAST("reach" AS numeric(18,0))), 4)*100  eng_ratio
+FROM "PostInsights"
+GROUP BY 1
+ORDER BY 2 DESC;
+
+/* Format region names to remove '.' and replace '&' with 'and' for the region 
+   'LATIN AMER. & CARIB' and trim down any extra spaces */
+SELECT DISTINCT "region", TRIM(REPLACE("region",'. &',' AND')) mod_region
+FROM "CountryRegions"
+WHERE "region" LIKE '%LATIN AMER%';
+
+/* Write two queries to find NULL values and then impute those with an NA string */ 
+SELECT "sport", "athlete_id", COALESCE("medal",'NA') filled_medal
+FROM "Games";
+
+/* Use regular expressions to match a substring from an event to extract data
+   for all men's events */
+
+SELECT *, REGEXP_MATCHES("event", 'Men') mens_events
+FROM "GamesStats";
+
+SELECT COUNT(*)
+FROM
+(SELECT *,REGEXP_MATCHES("event", 'Men')
+FROM "GamesStats") qr_1;
+
+SELECT COUNT(*)
+FROM "GamesStats";
